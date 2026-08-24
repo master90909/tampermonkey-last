@@ -26,7 +26,7 @@
     });
 })();
 
-======= SHORTHAND CODE ======
+    .(======= SHORTHAND CODE ======
 
 function qc() {
     document.querySelector('.qc-button')?.click();
@@ -44,4 +44,4 @@ if (e.altKey && e.key === 'z') qc();
 if (e.altKey && e.key === 'x') confirm();
 if (e.altKey && e.key === 'c') cancel();
 
-========================
+    ========================)
