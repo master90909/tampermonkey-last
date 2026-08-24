@@ -25,3 +25,23 @@
         }
     });
 })();
+
+======= SHORTHAND CODE ======
+
+function qc() {
+    document.querySelector('.qc-button')?.click();
+}
+
+function confirm() {
+    document.querySelector('.confirm-button')?.click();
+}
+
+function cancel() {
+    document.querySelector('.cancel-button')?.click();
+}
+
+if (e.altKey && e.key === 'z') qc();
+if (e.altKey && e.key === 'x') confirm();
+if (e.altKey && e.key === 'c') cancel();
+
+========================
