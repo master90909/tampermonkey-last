@@ -1,0 +1,39 @@
+#floating-clipboard-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 2147483647; /* Forces it to the very top layer */
+  font-family: Arial, sans-serif;
+}
+
+.floating-clipboard-box {
+  width: 220px;
+  height: 80px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background-color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  resize: both;
+  font-size: 13px;
+  opacity: 0.6;
+  transition: opacity 0.2s, background-color 0.2s;
+  color: #333;
+}
+
+.floating-clipboard-box:hover,
+.floating-clipboard-box:focus {
+  opacity: 1;
+  outline: 2px solid #007bff;
+}
+
+.floating-clipboard-label {
+  font-size: 11px;
+  color: #555;
+  margin-bottom: 4px;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px white;
+}
