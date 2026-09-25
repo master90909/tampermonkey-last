@@ -24,7 +24,7 @@ const box2 = createBox('floating-box-2', 'Box 2 (Alt + 2)');
 // Add a 3rd panel to show the Auto-Clicker status
 const clickerPanel = document.createElement('div');
 clickerPanel.className = 'floating-clipboard-box';
-clickerPanel.style.height = 'auto'; // Auto adjust height
+clickerPanel.style.height = 'auto'; 
 clickerPanel.style.paddingBottom = '10px';
 clickerPanel.innerHTML = `
   <div class="floating-clipboard-label" style="margin-bottom: 8px;">Auto-Clickers</div>
@@ -56,7 +56,7 @@ document.body.appendChild(container);
 
 // --- STATE VARIABLES ---
 let targets = { z: '', x: '', c: '', v: '' };
-let activePickerKey = null; // 'z', 'x', 'c', or 'v'
+let activePickerKey = null; 
 let hoveredElement = null;
 
 
@@ -80,12 +80,42 @@ box1.textarea.addEventListener('input', () => chrome.storage.local.set({ box1Dat
 box2.textarea.addEventListener('input', () => chrome.storage.local.set({ box2Data: box2.textarea.value }));
 
 
-// --- THE NEW PICKER LOGIC ---
+// --- THE NEW EXACT PATH GENERATOR ---
+// This guarantees we only click the EXACT button you pointed at, even if 10 others look identical.
+function getExactSelector(el) {
+  if (el.id) {
+    // If it has a unique ID, that is the safest option. CSS.escape handles weird characters.
+    return '#' + CSS.escape(el.id); 
+  }
+  
+  let path = [];
+  while (el && el.nodeType === Node.ELEMENT_NODE) {
+    let selector = el.nodeName.toLowerCase();
+    
+    if (el.id) {
+      selector = '#' + CSS.escape(el.id);
+      path.unshift(selector);
+      break; 
+    } else {
+      let sibling = el;
+      let nth = 1;
+      while (sibling = sibling.previousElementSibling) {
+        if (sibling.nodeName.toLowerCase() === selector) nth++;
+      }
+      if (nth > 1) selector += `:nth-of-type(${nth})`;
+    }
+    
+    path.unshift(selector);
+    el = el.parentNode;
+  }
+  return path.join(' > ');
+}
 
+
+// --- THE NEW PICKER LOGIC ---
 function togglePickerMode(key) {
   const buttons = document.querySelectorAll('.pick-btn');
   
-  // If clicking the same button to cancel
   if (activePickerKey === key) {
     activePickerKey = null;
     document.body.style.border = '';
@@ -94,7 +124,6 @@ function togglePickerMode(key) {
     return;
   }
 
-  // Activate picking for a new key
   activePickerKey = key;
   document.body.style.border = '3px dashed #d93025';
   
@@ -109,25 +138,21 @@ function togglePickerMode(key) {
   });
 }
 
-// Attach listeners to individual pick buttons
 document.querySelectorAll('.pick-btn').forEach(btn => {
   btn.addEventListener('click', (e) => togglePickerMode(e.target.dataset.key));
 });
 
-// Highlight elements on hover when in picker mode
 document.addEventListener('mouseover', (e) => {
   if (!activePickerKey) return;
   e.stopPropagation();
   
-  // Don't highlight our own extension boxes
   if (container.contains(e.target)) return;
 
   hoveredElement = e.target;
   hoveredElement.style.outline = '3px solid #d93025';
   hoveredElement.style.cursor = 'crosshair';
-}, true); // Use capturing phase to catch it early
+}, true);
 
-// Remove highlight when mouse leaves
 document.addEventListener('mouseout', (e) => {
   if (!activePickerKey) return;
   e.stopPropagation();
@@ -137,45 +162,92 @@ document.addEventListener('mouseout', (e) => {
   }
 }, true);
 
-// Handle the actual click to save the target
 document.addEventListener('click', (e) => {
   if (!activePickerKey) return;
-  
-  // Ignore clicks inside our own extension box so we don't break it
   if (container.contains(e.target)) return;
 
-  e.preventDefault(); // Stop the button from actually clicking/redirecting
+  e.preventDefault(); 
   e.stopPropagation();
   
-  let selector = '';
-  
-  // 1. Try to get ID first (most reliable)
-  if (e.target.id) {
-    selector = '#' + e.target.id;
-  } 
-  // 2. Try to get Classes next
-  else if (typeof e.target.className === 'string' && e.target.className.trim() !== '') {
-    // Convert class "btn btn-primary" to ".btn.btn-primary"
-    const classes = e.target.className.trim().split(/\s+/).join('.');
-    selector = e.target.tagName.toLowerCase() + '.' + classes;
-  } 
-  // 3. Fallback to just the Tag Name (like 'button' or 'a')
-  else {
-    selector = e.target.tagName.toLowerCase();
+  // WMS Safety Feature: If the user clicked an icon/span inside a button, 
+  // traverse upwards to find the actual clickable button element.
+  let targetEl = e.target;
+  const closestInteractive = targetEl.closest('button, a, input, [role="button"]');
+  if (closestInteractive) {
+    targetEl = closestInteractive;
   }
+  
+  const selector = getExactSelector(targetEl);
 
-  // Save the selector for this specific hotkey
   targets[activePickerKey] = selector;
   chrome.storage.local.set({ [`target_${activePickerKey}`]: selector });
   
-  // Update UI
   const display = document.getElementById(`target-${activePickerKey}-display`);
   display.innerText = selector;
   display.parentElement.title = 'Target: ' + selector;
 
-  // Turn off picker mode
   togglePickerMode(activePickerKey);
-}, true); // True = capturing phase, intercepts click BEFORE the website sees it
+}, true);
+
+
+// --- UPGRADED MAXIMUM SECURITY SAFETY CHECK ---
+function isSafeToClick(element) {
+  if (!element) return false;
+  
+  // 1. Core HTML & ARIA Disabled Checks
+  if (element.disabled === true || element.hasAttribute('disabled')) return false; 
+  if (element.getAttribute('aria-disabled') === 'true' || element.hasAttribute('readonly')) return false;
+
+  // 2. Enterprise Framework Disabled Classes
+  const disabledClasses = ['disabled', 'is-disabled', 'p-disabled', 'mat-button-disabled', 'Mui-disabled'];
+  if (disabledClasses.some(className => element.classList.contains(className))) return false;
+
+  // 3. Physical DOM Existence
+  const rect = element.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+
+  // 4. CSS Visibility Checks
+  const style = window.getComputedStyle(element);
+  if (element.offsetParent === null && style.position !== 'fixed') return false;
+  if (
+    style.display === 'none' || 
+    style.visibility === 'hidden' || 
+    style.visibility === 'collapse' || 
+    parseFloat(style.opacity) < 0.1 || 
+    style.pointerEvents === 'none' 
+  ) {
+    return false;
+  }
+
+  // 5. MAXIMUM SECURITY: Viewport Bounds Check (Must be fully on screen)
+  const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+  const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+
+  if (
+    rect.top < 0 || 
+    rect.left < 0 || 
+    rect.bottom > windowHeight || 
+    rect.right > windowWidth
+  ) {
+    console.log("Security Alert: Button is partially or fully scrolled off the screen.");
+    return false;
+  }
+
+  // 6. MAXIMUM SECURITY: Overlap/Occlusion Check (Is something else covering it?)
+  const centerX = rect.left + (rect.width / 2);
+  const centerY = rect.top + (rect.height / 2);
+  const topmostElement = document.elementFromPoint(centerX, centerY);
+
+  if (!topmostElement) return false; 
+  
+  // Ensure the element we see on top is either our button, OR a child inside our button (like an icon)
+  if (topmostElement !== element && !element.contains(topmostElement)) {
+    console.log("Security Alert: Another element (like a popup or loading screen) is blocking this button.");
+    return false; 
+  }
+
+  return true; 
+}
 
 
 // --- 4. HANDLE ALL KEYBOARD SHORTCUTS ---
@@ -202,16 +274,18 @@ document.addEventListener('keydown', (e) => {
     if (selector) {
       const buttonToClick = document.querySelector(selector);
       
-      if (buttonToClick) {
+      // RUN THE STRICT SAFETY CHECK HERE before clicking
+      if (isSafeToClick(buttonToClick)) {
         buttonToClick.click();
         
-        // Flash a quick green border around the screen to confirm it clicked
+        // Flash a quick green border around the screen to confirm it clicked safely
         const originalBorder = document.body.style.border;
         document.body.style.border = '4px solid #28a745';
         setTimeout(() => document.body.style.border = originalBorder, 300);
       } else {
-        console.log(`Alt+${key.toUpperCase()} pressed: The target (${selector}) was not found on this page.`);
-        // Flash red to indicate failure
+        console.warn(`Alt+${key.toUpperCase()} aborted: Target (${selector}) is hidden, disabled, off-screen, or blocked by another element.`);
+        
+        // Flash red to indicate the script refused to click it for safety
         const originalBorder = document.body.style.border;
         document.body.style.border = '4px solid #d93025';
         setTimeout(() => document.body.style.border = originalBorder, 300);
