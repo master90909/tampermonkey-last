@@ -22,7 +22,7 @@ document.body.appendChild(container);
 // State Variables
 let customTextboxes = []; 
 let customClickers = []; 
-let macroSteps = []; // NEW: Array to hold unlimited Link Chain steps
+let macroSteps = []; 
 let activePickerKey = null; 
 let recordingKeyFor = null; 
 let hoveredElement = null;
@@ -80,7 +80,7 @@ addBoxBtn.onclick = () => {
   saveCustomTextboxes();
   renderTextboxSettings();
   renderBoxes();
-  renderMacroSteps(); // Update dropdowns in Link Chain
+  renderMacroSteps(); 
 };
 textConfigSection.appendChild(addBoxBtn);
 settingsView.appendChild(textConfigSection);
@@ -412,7 +412,6 @@ chrome.storage.local.get(null, (result) => {
     chrome.storage.local.set({ customTextboxes });
   }
   
-  // Migrate old macro layout to new unlimited array format if needed
   if (result.macroSteps) {
     macroSteps = result.macroSteps;
   } else if (result.target_macroInput || result.target_macroBtn) {
@@ -494,4 +493,304 @@ document.addEventListener('mouseover', (e) => {
   if (!activePickerKey) return;
   e.stopPropagation();
   if (container.contains(e.target)) return;
+  hoveredElement = e.target;
+  hoveredElement.style.outline = '3px solid #d93025';
+  hoveredElement.style.cursor = 'crosshair';
+}, true);
+
+document.addEventListener('mouseout', (e) => {
+  if (!activePickerKey) return;
+  e.stopPropagation();
+  if (hoveredElement) {
+    hoveredElement.style.outline = '';
+    hoveredElement.style.cursor = '';
+  }
+}, true);
+
+document.addEventListener('click', (e) => {
+  if (!activePickerKey) return;
+  if (container.contains(e.target)) return;
+
+  e.preventDefault(); 
+  e.stopPropagation();
   
+  let targetEl = e.target;
+  
+  if (!activePickerKey.includes('input')) {
+    const closestInteractive = targetEl.closest('button, a, [role="button"]');
+    if (closestInteractive) targetEl = closestInteractive;
+  }
+  
+  const selector = getExactSelector(targetEl);
+
+  if (activePickerKey.startsWith('clicker_')) {
+    const id = activePickerKey.split('_')[1];
+    const clicker = customClickers.find(c => c.id === id);
+    if (clicker) {
+      if (!clicker.selectors) clicker.selectors = [];
+      clicker.selectors.push(selector);
+      saveCustomClickers();
+      renderCustomClickers();
+    }
+  } else if (activePickerKey.startsWith('macro_')) {
+    const id = activePickerKey.replace('macro_', '');
+    const step = macroSteps.find(s => s.id === id);
+    if (step) {
+      step.selector = selector;
+      saveMacroSteps();
+      renderMacroSteps();
+    }
+  }
+  
+  cancelPickerMode();
+}, true);
+
+
+// --- WMS SAFETY CHECKS ---
+function isSafeToInteract(element) {
+  if (!element) return false;
+  if (element.disabled === true || element.hasAttribute('disabled')) return false; 
+  if (element.getAttribute('aria-disabled') === 'true' || element.hasAttribute('readonly')) return false;
+
+  const disabledClasses = ['disabled', 'is-disabled', 'p-disabled', 'mat-button-disabled', 'Mui-disabled'];
+  if (disabledClasses.some(className => element.classList.contains(className))) return false;
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+
+  const style = window.getComputedStyle(element);
+  if (element.offsetParent === null && style.position !== 'fixed') return false;
+  if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || parseFloat(style.opacity) < 0.1 || style.pointerEvents === 'none') return false;
+
+  const windowHeight = window.innerHeight || document.documentElement.clientHeight;
+  const windowWidth = window.innerWidth || document.documentElement.clientWidth;
+  if (rect.top < 0 || rect.left < 0 || rect.bottom > windowHeight || rect.right > windowWidth) return false;
+
+  const centerX = rect.left + (rect.width / 2);
+  const centerY = rect.top + (rect.height / 2);
+  const topmostElement = document.elementFromPoint(centerX, centerY);
+
+  if (!topmostElement) return false; 
+  if (topmostElement !== element && !element.contains(topmostElement)) return false; 
+
+  return true; 
+}
+
+
+function showRedWarning(message) {
+  const existingWarning = document.getElementById('wms-red-warning');
+  if (existingWarning) existingWarning.remove();
+  const warning = document.createElement('div');
+  warning.id = 'wms-red-warning';
+  warning.innerText = '⚠️ ' + message;
+  warning.style.cssText = `position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background-color: #d93025; color: white; padding: 15px 30px; font-weight: bold; font-size: 16px; border-radius: 8px; z-index: 2147483647; box-shadow: 0 6px 16px rgba(217,48,37,0.4); pointer-events: none; border: 2px solid white;`;
+  document.body.appendChild(warning);
+  const originalBorder = document.body.style.border;
+  document.body.style.border = '6px solid #d93025';
+  setTimeout(() => {
+    warning.remove();
+    document.body.style.border = originalBorder;
+  }, 2500);
+}
+
+
+// --- AUTOMATED "ENTER" DISPATCHER ---
+function simulateEnterPress(element) {
+  element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+  element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+}
+
+
+// --- 4. HANDLE ALL KEYBOARD SHORTCUTS ---
+document.addEventListener('keydown', (e) => {
+  
+  if (recordingKeyFor) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+    
+    let comboArr = [];
+    if (e.ctrlKey) comboArr.push('ctrl');
+    if (e.altKey) comboArr.push('alt');
+    if (e.shiftKey) comboArr.push('shift');
+    comboArr.push(e.key.toLowerCase());
+    
+    const comboStr = comboArr.join('+');
+    const displayStr = comboArr.map(k => k.charAt(0).toUpperCase() + k.slice(1)).join(' + ');
+
+    const clicker = customClickers.find(c => c.id === recordingKeyFor);
+    if (clicker) {
+      clicker.keyCombo = comboStr;
+      clicker.displayKey = displayStr;
+      saveCustomClickers();
+    }
+    const tb = customTextboxes.find(t => t.id === recordingKeyFor);
+    if (tb) {
+      tb.keyCombo = comboStr;
+      tb.displayKey = displayStr;
+      saveCustomTextboxes();
+      renderBoxes();
+    }
+    
+    recordingKeyFor = null;
+    renderCustomClickers();
+    renderTextboxSettings();
+    return;
+  }
+
+  let currentComboArr = [];
+  if (e.ctrlKey) currentComboArr.push('ctrl');
+  if (e.altKey) currentComboArr.push('alt');
+  if (e.shiftKey) currentComboArr.push('shift');
+  if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+     currentComboArr.push(e.key.toLowerCase());
+  }
+  const pressedComboStr = currentComboArr.join('+');
+
+  // CUSTOM CLICKERS
+  const triggeredClicker = customClickers.find(c => c.keyCombo === pressedComboStr);
+  if (triggeredClicker) {
+     e.preventDefault();
+     if (!triggeredClicker.selectors || triggeredClicker.selectors.length === 0) {
+       return showRedWarning(`No targets for ${triggeredClicker.displayKey}!`);
+     }
+     
+     let i = 0;
+     function clickNextTarget() {
+       if (i >= triggeredClicker.selectors.length) return;
+       const buttonToClick = document.querySelector(triggeredClicker.selectors[i]);
+       if (!isSafeToInteract(buttonToClick)) return showRedWarning(`Target ${i + 1} blocked or hidden!`);
+       
+       buttonToClick.click();
+       const ob = document.body.style.border;
+       document.body.style.border = '5px solid #28a745'; 
+       setTimeout(() => document.body.style.border = ob, 200);
+       
+       i++;
+       if (i < triggeredClicker.selectors.length) setTimeout(clickNextTarget, 400); 
+     }
+     clickNextTarget();
+     return;
+  }
+
+  // CUSTOM TEXTBOXES
+  const triggeredTb = customTextboxes.find(t => t.keyCombo === pressedComboStr);
+  if (triggeredTb) {
+    e.preventDefault();
+    const textareaEl = document.getElementById(`textarea-${triggeredTb.id}`);
+    if (textareaEl) handleShortcut(textareaEl, triggeredTb);
+    return;
+  }
+
+  // UNLIMITED LINK CHAIN MACRO (Alt + Q)
+  if (e.altKey && e.key.toLowerCase() === 'q') {
+    e.preventDefault();
+    if (macroSteps.length === 0) return showRedWarning("Your Link Chain is empty!");
+    
+    let i = 0;
+    function runNextMacroStep() {
+      if (i >= macroSteps.length) return;
+      const step = macroSteps[i];
+      const targetEl = document.querySelector(step.selector);
+      
+      if (!isSafeToInteract(targetEl)) return showRedWarning(`Sequence stopped at Step ${i+1}: Element hidden!`);
+      
+      if (step.type === 'click') {
+         targetEl.click();
+         const ob = document.body.style.border;
+         document.body.style.border = '5px solid #00838f'; 
+         setTimeout(() => document.body.style.border = ob, 200);
+      } else if (step.type === 'input') {
+         if (!step.sourceBoxId) return showRedWarning(`Step ${i+1} has no Source Box selected!`);
+         const sourceTb = customTextboxes.find(t => t.id === step.sourceBoxId);
+         if (!sourceTb) return showRedWarning(`Source Box for Step ${i+1} was deleted!`);
+         
+         // NEW: Physically click the field first to wake it up
+         targetEl.click();
+         targetEl.focus();
+         targetEl.select(); 
+         
+         const textToInsert = sourceTb.value;
+         
+         if (!document.execCommand('insertText', false, textToInsert)) {
+           targetEl.value = textToInsert;
+           targetEl.dispatchEvent(new Event('input', { bubbles: true }));
+           targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+         }
+         
+         // NEW: Automatically trigger an "Enter" press after pasting
+         simulateEnterPress(targetEl);
+      }
+      
+      i++;
+      setTimeout(runNextMacroStep, 450); 
+    }
+    
+    runNextMacroStep();
+  }
+});
+
+// --- 5. THE COPY/PASTE LOGIC ---
+function handleShortcut(textAreaElement, tbData) {
+  const selectedText = window.getSelection().toString().trim();
+  const activeEl = document.activeElement;
+
+  if (selectedText) {
+    textAreaElement.value = selectedText;
+    tbData.value = selectedText;
+    saveCustomTextboxes();
+    textAreaElement.style.backgroundColor = '#d4edda';
+    setTimeout(() => textAreaElement.style.backgroundColor = '#ffffff', 300);
+  } else if (activeEl) {
+    const textToInsert = tbData.value;
+    if (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') {
+      const start = activeEl.selectionStart;
+      const end = activeEl.selectionEnd;
+      activeEl.setRangeText(textToInsert, start, end, 'end');
+      activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+      
+      // NEW: Automatically trigger an "Enter" press after manual paste
+      simulateEnterPress(activeEl);
+      
+      textAreaElement.style.backgroundColor = '#cce5ff';
+      setTimeout(() => textAreaElement.style.backgroundColor = '#ffffff', 300);
+    } else if (activeEl.isContentEditable) {
+      document.execCommand('insertText', false, textToInsert);
+      
+      // NEW: Automatically trigger an "Enter" press after manual paste in rich editors
+      simulateEnterPress(activeEl);
+      
+      textAreaElement.style.backgroundColor = '#cce5ff';
+      setTimeout(() => textAreaElement.style.backgroundColor = '#ffffff', 300);
+    } else {
+        textAreaElement.focus();
+    }
+  }
+}
+
+// --- 6. REAL-TIME MULTI-TAB SYNC ---
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local') {
+    if (changes.customTextboxes) {
+       customTextboxes = changes.customTextboxes.newValue || [];
+       renderBoxes();
+       if (settingsView.style.display === 'flex') {
+         renderTextboxSettings();
+         renderMacroSteps();
+       }
+    }
+    if (changes.macroSteps) {
+       macroSteps = changes.macroSteps.newValue || [];
+       if (settingsView.style.display === 'flex') renderMacroSteps();
+    }
+    if (changes.customClickers) {
+       let newClickers = changes.customClickers.newValue || [];
+       customClickers = newClickers.map(c => {
+         if (c.selector && !c.selectors) { c.selectors = [c.selector]; delete c.selector; }
+         if (!c.selectors) c.selectors = [];
+         return c;
+       });
+       if (settingsView.style.display === 'flex') renderCustomClickers();
+    }
+  }
+});
