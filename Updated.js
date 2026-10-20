@@ -1,439 +1,439 @@
-// 1. Core State & Visual Interface
-const container = document.createElement('div');
-container.id = 'wms-helper-utility-node'; 
-
-// STEALTH MODE: Invisibility cloaks for enterprise tracking software
-container.classList.add('fs-exclude'); 
-container.setAttribute('data-rr-ignore', 'true'); 
-container.setAttribute('data-dd-privacy', 'mask'); 
-container.setAttribute('data-hj-suppress', 'true'); 
-container.setAttribute('data-private', 'true'); 
-
-let macros = [];
-let cancelMacro = false; 
-let isMacroRunning = false; 
-let processedElements = new WeakMap(); 
-
-function createBox(id, labelText) {
-  const wrapper = document.createElement('div');
-  const label = document.createElement('div');
-  label.className = 'floating-clipboard-label';
-  label.innerText = labelText;
-  
-  const textarea = document.createElement('textarea');
-  textarea.className = 'floating-clipboard-box';
-  textarea.id = id;
-  
-  wrapper.appendChild(label);
-  wrapper.appendChild(textarea);
-  return { wrapper, textarea };
-}
-
-const box1 = createBox('floating-box-1', 'Box 1 (Alt + 1)');
-const box2 = createBox('floating-box-2', 'Box 2 (Alt + 2)');
-
-container.innerHTML = `
-  <div id="main-view" style="display:flex; flex-direction:column; gap:12px;"></div>
-  <div id="settings-view" style="display:none; flex-direction:column; gap:10px; max-height: 500px; overflow-y: auto;">
-    <h3 style="margin:0; font-size:14px; border-bottom:1px solid #ccc; padding-bottom:5px;">⚙️ WMS Automation Builder</h3>
-    <button id="add-macro-btn" style="background:#28a745; color:white; border:none; padding:6px; cursor:pointer; font-weight:bold; border-radius:4px;">+ Create New Macro</button>
-    <div id="macro-list"></div>
-  </div>
-  <button id="toggle-settings-btn" style="margin-top:5px; background:#6c757d; color:white; border:none; padding:5px; cursor:pointer; border-radius:4px;">⚙️ Settings</button>
-`;
-
-document.body.appendChild(container);
-const mainView = document.getElementById('main-view');
-const settingsView = document.getElementById('settings-view');
-mainView.appendChild(box1.wrapper);
-mainView.appendChild(box2.wrapper);
-
-document.getElementById('toggle-settings-btn').addEventListener('click', () => {
-  const isSettings = settingsView.style.display === 'flex';
-  settingsView.style.display = isSettings ? 'none' : 'flex';
-  mainView.style.display = isSettings ? 'flex' : 'none';
-});
-
-// 2. Storage & Sync (WITH MULTI-TAB REAL-TIME UPDATES)
-chrome.storage.local.get(['box1Data', 'box2Data', 'savedMacros'], (result) => {
-  if (result.box1Data) box1.textarea.value = result.box1Data;
-  if (result.box2Data) box2.textarea.value = result.box2Data;
-  if (result.savedMacros) {
-    macros = result.savedMacros;
-    renderMacros();
-    checkPassiveURLTriggers();
+(function () {
+  // Prevent duplicate injection if script runs twice
+  if (document.getElementById('wms-helper-utility-node')) {
+    document.getElementById('wms-helper-utility-node').remove();
   }
-});
-
-box1.textarea.addEventListener('input', () => chrome.storage.local.set({ box1Data: box1.textarea.value }));
-box2.textarea.addEventListener('input', () => chrome.storage.local.set({ box2Data: box2.textarea.value }));
-
-function saveMacros() {
-  chrome.storage.local.set({ savedMacros: macros });
-}
-
-// REAL-TIME SYNC: Listen for changes from OTHER tabs to keep UI instantly updated
-chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'local') {
-    if (changes.box1Data && document.activeElement !== box1.textarea) {
-      box1.textarea.value = changes.box1Data.newValue || '';
-    }
-    if (changes.box2Data && document.activeElement !== box2.textarea) {
-      box2.textarea.value = changes.box2Data.newValue || '';
-    }
-    if (changes.savedMacros) {
-      macros = changes.savedMacros.newValue || [];
-      renderMacros(); // Instantly update visual blocks if edited in another tab
-    }
-  }
-});
-
-// 3. Robust Element Picker & Safety
-function getExactSelector(el) {
-  if (!el) return '';
-  if (el.id) return `#${CSS.escape(el.id)}`;
-  
-  let path = [];
-  while (el && el.nodeType === Node.ELEMENT_NODE) {
-    let selector = el.nodeName.toLowerCase();
-    if (el.id) {
-      selector = '#' + CSS.escape(el.id);
-      path.unshift(selector);
-      break; 
-    } else {
-      let sibling = el;
-      let nth = 1;
-      while (sibling = sibling.previousElementSibling) {
-        if (sibling.nodeName.toLowerCase() === selector) nth++;
-      }
-      if (nth > 1) selector += `:nth-of-type(${nth})`;
-    }
-    path.unshift(selector);
-    el = el.parentNode;
-  }
-  return path.join(' > ');
-}
-
-function isSafeToClick(el) {
-  if (!el) return false;
-  const style = window.getComputedStyle(el);
-  const rect = el.getBoundingClientRect();
-  
-  if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.opacity === '0' || style.pointerEvents === 'none') return false;
-  if (el.disabled || el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true' || el.readOnly || el.classList.contains('p-disabled') || el.classList.contains('mat-button-disabled')) return false;
-  if (el.offsetParent === null && style.position !== 'fixed') return false;
-  if (rect.width === 0 || rect.height === 0 || rect.top >= window.innerHeight || rect.bottom <= 0) return false;
-  
-  // POPUP/OCCLUSION CHECK: Make sure nothing is physically covering the element
-  const centerX = rect.left + (rect.width / 2);
-  const centerY = rect.top + (rect.height / 2);
-  const topElement = document.elementFromPoint(centerX, centerY);
-  
-  if (topElement && topElement !== el && !el.contains(topElement) && !topElement.contains(el)) {
-    console.warn("Safety Abort: Element is covered by a popup or modal", topElement);
-    return false;
+  if (document.getElementById('wms-node-editor')) {
+    document.getElementById('wms-node-editor').remove();
   }
 
-  return true;
-}
-
-// 4. Macro Builder UI
-document.getElementById('add-macro-btn').addEventListener('click', () => {
-  macros.push({ id: Date.now(), trigger: 'hotkey', triggerValue: '', blocks: [] });
-  saveMacros();
-});
-
-function renderMacros() {
-  const list = document.getElementById('macro-list');
-  list.innerHTML = '';
-  macros.forEach((macro, macroIndex) => {
-    const card = document.createElement('div');
-    card.style = "border:1px solid #ccc; border-radius:6px; padding:8px; margin-bottom:10px; background:#f8f9fa; box-shadow: 0 2px 4px rgba(0,0,0,0.05);";
-    
-    const triggerHtml = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:4px;">
-        <select class="trigger-type" style="width:35%; font-size:11px; padding:2px;">
-          <option value="hotkey" ${macro.trigger === 'hotkey' ? 'selected' : ''}>⌨️ Hotkey</option>
-          <option value="url" ${macro.trigger === 'url' ? 'selected' : ''}>🔗 Auto (URL)</option>
-          <option value="element" ${macro.trigger === 'element' ? 'selected' : ''}>👁️ Auto (Element)</option>
-        </select>
-        
-        ${macro.trigger === 'element' 
-          ? `<button class="pick-trigger" style="flex-grow:1; background:#ffe0b2; color:#cc7000; border:1px solid #ffcc80; cursor:pointer; font-size:10px; padding:2px;">🎯 Pick Trigger</button>` 
-          : `<input type="text" class="trigger-val" placeholder="${macro.trigger === 'hotkey' ? 'Press keys...' : '/wms/receive'}" value="${macro.triggerValue || ''}" style="flex-grow:1; font-size:11px; padding:2px;">`
-        }
-        
-        <button class="del-macro" style="color:#d93025; border:none; background:none; cursor:pointer; font-size:12px;" title="Delete Macro">✖</button>
-      </div>
-      ${macro.trigger === 'element' && macro.triggerValue ? `<div style="font-size:9px; color:#666; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Target: ${macro.triggerValue.split(' > ').pop()}</div>` : ''}
-    `;
-
-    card.innerHTML = triggerHtml + `
-      <div class="blocks-container" style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px; padding-top:4px; border-top:1px dashed #ccc;"></div>
-      <div style="display:flex; gap:4px; flex-wrap:wrap;">
-        <button class="add-click" style="font-size:10px; background:#e3f2fd; color:#0d6efd; border:1px solid #90caf9; padding:4px; border-radius:3px; flex:1; cursor:pointer;">+ Click</button>
-        <button class="add-type" style="font-size:10px; background:#e8f5e9; color:#198754; border:1px solid #a5d6a7; padding:4px; border-radius:3px; flex:1; cursor:pointer;">+ Type</button>
-        <button class="add-wait-el" style="font-size:10px; background:#fff3e0; color:#fd7e14; border:1px solid #ffcc80; padding:4px; border-radius:3px; flex:1; cursor:pointer;">+ Wait Element</button>
-      </div>
-    `;
-
-    const triggerType = card.querySelector('.trigger-type');
-    triggerType.addEventListener('change', (e) => {
-      macros[macroIndex].trigger = e.target.value;
-      macros[macroIndex].triggerValue = '';
-      saveMacros();
-    });
-
-    if (macro.trigger === 'hotkey') {
-      const triggerVal = card.querySelector('.trigger-val');
-      triggerVal.addEventListener('keydown', (e) => {
-        e.preventDefault();
-        const keys = [];
-        if (e.ctrlKey) keys.push('Ctrl');
-        if (e.altKey) keys.push('Alt');
-        if (e.shiftKey) keys.push('Shift');
-        if (e.key !== 'Control' && e.key !== 'Alt' && e.key !== 'Shift') keys.push(e.key.toUpperCase());
-        const combo = keys.join('+');
-        triggerVal.value = combo;
-        macros[macroIndex].triggerValue = combo;
-        saveMacros();
-      });
-    } else if (macro.trigger === 'url') {
-      const triggerVal = card.querySelector('.trigger-val');
-      triggerVal.addEventListener('change', (e) => {
-        macros[macroIndex].triggerValue = e.target.value;
-        saveMacros();
-      });
-    } else if (macro.trigger === 'element') {
-      const pickTriggerBtn = card.querySelector('.pick-trigger');
-      pickTriggerBtn.addEventListener('click', () => startPicker(macroIndex, null, true));
-    }
-
-    card.querySelector('.del-macro').addEventListener('click', () => {
-      macros.splice(macroIndex, 1);
-      saveMacros();
-    });
-
-    const blocksContainer = card.querySelector('.blocks-container');
-    macro.blocks.forEach((block, blockIndex) => {
-      const bDiv = document.createElement('div');
-      let bgColor = block.type === 'click' ? '#f1f8ff' : block.type === 'type' ? '#f0fff4' : '#fff9f0';
-      let borderColor = block.type === 'click' ? '#90caf9' : block.type === 'type' ? '#a5d6a7' : '#ffcc80';
-      
-      bDiv.style = `border: 1px solid ${borderColor}; background: ${bgColor}; border-radius:4px; padding:4px; font-size:11px; display:flex; flex-direction:column; gap:4px;`;
-      
-      let headerHtml = `
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-weight:bold; color:#555;">${blockIndex + 1}. ${block.type.toUpperCase()}</span>
-          <div style="display:flex; gap:2px;">
-            <button class="pick-target" style="background:#fff; border:1px solid #ccc; cursor:pointer; padding:2px 4px; border-radius:3px;" title="Pick Target">🎯</button>
-            ${blockIndex > 0 ? `<button class="move-up" style="background:none; border:none; cursor:pointer;" title="Move Up">↑</button>` : ''}
-            ${blockIndex < macro.blocks.length - 1 ? `<button class="move-down" style="background:none; border:none; cursor:pointer;" title="Move Down">↓</button>` : ''}
-            <button class="del-block" style="color:#d93025; background:none; border:none; cursor:pointer;" title="Delete Block">✖</button>
-          </div>
-        </div>
-        ${block.selector ? `<div style="font-size:9px; color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${block.selector.split(' > ').pop()}</div>` : '<div style="font-size:9px; color:#d93025;">No target picked!</div>'}
-      `;
-
-      bDiv.innerHTML = headerHtml;
-
-      if (block.type === 'type') {
-         const typeControls = document.createElement('div');
-         typeControls.style = "display:flex; gap:4px; margin-top:2px;";
-         typeControls.innerHTML = `
-            <select class="type-source" style="font-size:9px; padding:2px; flex:1;">
-               <option value="box1" ${block.source === 'box1' ? 'selected' : ''}>Use Box 1</option>
-               <option value="box2" ${block.source === 'box2' ? 'selected' : ''}>Use Box 2</option>
-               <option value="custom" ${block.source === 'custom' ? 'selected' : ''}>Custom Text</option>
-            </select>
-            ${block.source === 'custom' ? `<input type="text" class="type-custom-val" value="${block.customText || ''}" placeholder="Type text..." style="font-size:9px; padding:2px; flex:1;">` : ''}
-         `;
-         
-         typeControls.querySelector('.type-source').addEventListener('change', (e) => {
-            macros[macroIndex].blocks[blockIndex].source = e.target.value;
-            saveMacros();
-         });
-         
-         const customInput = typeControls.querySelector('.type-custom-val');
-         if(customInput) {
-             customInput.addEventListener('change', (e) => {
-                macros[macroIndex].blocks[blockIndex].customText = e.target.value;
-                saveMacros();
-             });
-         }
-         bDiv.appendChild(typeControls);
-      }
-
-      bDiv.querySelector('.pick-target').addEventListener('click', () => startPicker(macroIndex, blockIndex, false));
-      bDiv.querySelector('.del-block').addEventListener('click', () => { macros[macroIndex].blocks.splice(blockIndex, 1); saveMacros(); });
-      
-      if(bDiv.querySelector('.move-up')) {
-          bDiv.querySelector('.move-up').addEventListener('click', () => {
-              [macros[macroIndex].blocks[blockIndex - 1], macros[macroIndex].blocks[blockIndex]] = [macros[macroIndex].blocks[blockIndex], macros[macroIndex].blocks[blockIndex - 1]];
-              saveMacros();
-          });
-      }
-      if(bDiv.querySelector('.move-down')) {
-          bDiv.querySelector('.move-down').addEventListener('click', () => {
-              [macros[macroIndex].blocks[blockIndex + 1], macros[macroIndex].blocks[blockIndex]] = [macros[macroIndex].blocks[blockIndex], macros[macroIndex].blocks[blockIndex + 1]];
-              saveMacros();
-          });
-      }
-
-      blocksContainer.appendChild(bDiv);
-    });
-
-    card.querySelector('.add-click').addEventListener('click', () => { macros[macroIndex].blocks.push({ type: 'click', selector: '' }); saveMacros(); });
-    card.querySelector('.add-type').addEventListener('click', () => { macros[macroIndex].blocks.push({ type: 'type', selector: '', source: 'box1', customText: '' }); saveMacros(); });
-    card.querySelector('.add-wait-el').addEventListener('click', () => { macros[macroIndex].blocks.push({ type: 'wait_element', selector: '' }); saveMacros(); });
-
-    list.appendChild(card);
-  });
-}
-
-// 5. Picker Logic
-function startPicker(macroIndex, blockIndex, isTrigger) {
-  document.body.style.cursor = 'crosshair';
-  document.body.style.outline = '3px dashed #d93025';
-  
-  function pick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    let targetEl = e.target;
-    const closestInteractive = targetEl.closest('button, a, [role="button"]');
-    if (closestInteractive && !['input','textarea'].includes(targetEl.tagName.toLowerCase())) {
-        targetEl = closestInteractive;
-    }
-
-    const exactSelector = getExactSelector(targetEl);
-    
-    if (isTrigger) {
-        macros[macroIndex].triggerValue = exactSelector;
-    } else {
-        macros[macroIndex].blocks[blockIndex].selector = exactSelector;
-    }
-    
-    saveMacros();
-    document.body.style.cursor = 'default';
-    document.body.style.outline = 'none';
-    document.removeEventListener('click', pick, true);
-  }
-  document.addEventListener('click', pick, true);
-}
-
-// 6. Execution Engine (WITH PROACTIVE DOM VALIDATION)
-async function runMacro(macro) {
-  if (isMacroRunning) return; // Prevent double-execution
-  isMacroRunning = true;
-  cancelMacro = false;
-  
-  const originalBorder = document.body.style.border;
-  document.body.style.border = '4px solid #fd7e14'; 
-  
-  for (let block of macro.blocks) {
-    if (cancelMacro) { console.log('🛑 Macro Aborted.'); break; } 
-    if (!block.selector) continue; 
-
-    if (block.type === 'wait_element') {
-      await waitForElement(block.selector, 10000); // Wait up to 10 seconds for explicit blocks
-    } 
-    else if (block.type === 'click') {
-      // PROACTIVE DOM CHECK: Wait up to 3 seconds for target to exist before blindly clicking
-      const isReady = await waitForElement(block.selector, 3000);
-      const el = document.querySelector(block.selector);
-      
-      if (isReady && el) {
-        el.click();
-        await new Promise(r => setTimeout(r, 150)); 
-      } else {
-        console.warn("Safety Abort: Click target detached or missing.", block.selector);
-        cancelMacro = true;
-      }
-    } 
-    else if (block.type === 'type') {
-      // PROACTIVE DOM CHECK
-      const isReady = await waitForElement(block.selector, 3000);
-      const el = document.querySelector(block.selector);
-      
-      if (isReady && el) {
-        el.click(); 
-        el.focus();
-        
-        let textToType = '';
-        if (block.source === 'box1') textToType = box1.textarea.value;
-        else if (block.source === 'box2') textToType = box2.textarea.value;
-        else if (block.source === 'custom') textToType = block.customText;
-
-        // ENTERPRISE REACT/ANGULAR INPUT BYPASS
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-        const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-        
-        if (el.tagName.toLowerCase() === 'input' && nativeInputValueSetter) {
-            nativeInputValueSetter.call(el, textToType);
-        } else if (el.tagName.toLowerCase() === 'textarea' && nativeTextAreaValueSetter) {
-            nativeTextAreaValueSetter.call(el, textToType);
+  // Safe storage wrapper (prevents crashes if chrome.storage permission is missing)
+  const memoryStore = {};
+  const SafeStorage = {
+    get(keys, callback) {
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(keys, (res) => callback(res || {}));
         } else {
-            el.value = textToType; 
+          const out = {};
+          keys.forEach(k => { if (memoryStore[k] !== undefined) out[k] = memoryStore[k]; });
+          callback(out);
         }
-
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        
-        await new Promise(r => setTimeout(r, 100));
-        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-        el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-        await new Promise(r => setTimeout(r, 150));
-      } else {
-        console.warn("Safety Abort: Type target detached or missing.", block.selector);
-        cancelMacro = true;
+      } catch (err) {
+        console.warn('WMS Storage read fallback:', err);
+        callback({});
+      }
+    },
+    set(obj) {
+      try {
+        Object.assign(memoryStore, obj);
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set(obj);
+        }
+      } catch (err) {
+        console.warn('WMS Storage write fallback:', err);
       }
     }
-  }
-  
-  document.body.style.border = originalBorder;
-  isMacroRunning = false;
-  cancelMacro = false;
-}
+  };
 
-function waitForElement(selector, timeoutMs = 10000) {
-  return new Promise(resolve => {
-    if (document.querySelector(selector) && isSafeToClick(document.querySelector(selector))) return resolve(true);
-    
-    let timeoutTimer;
-    const observer = new MutationObserver(() => {
-      if (cancelMacro) { 
-        observer.disconnect(); 
-        clearTimeout(timeoutTimer);
-        resolve(false); 
-      }
-      const el = document.querySelector(selector);
-      if (el && isSafeToClick(el)) {
-        observer.disconnect();
-        clearTimeout(timeoutTimer);
-        resolve(true);
+  const style = document.createElement('style');
+  style.textContent = `
+    #wms-helper-utility-node {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      z-index: 2147483640;
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      width: 295px;
+      background: #181920;
+      border: 1px solid #2d3139;
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.55);
+      user-select: none;
+      color: #e4e7eb;
+    }
+    .wms-drag-handle {
+      background: linear-gradient(135deg, #2d323f, #1e212b);
+      color: #00d2ff;
+      padding: 9px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-radius: 8px 8px 0 0;
+      cursor: grab;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+      margin: -12px -12px 10px -12px;
+      border-bottom: 1px solid #333846;
+    }
+    .wms-drag-handle:active { cursor: grabbing; }
+
+    .box-wrapper { background: #22252e; border-radius: 8px; padding: 7px 9px; margin-bottom: 7px; border: 1px solid #2c303c; }
+    .box-label { font-size: 10px; font-weight: 700; color: #8c96a8; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.4px; }
+    .box-input {
+      width: 100%; box-sizing: border-box; background: #13141a; border: 1px solid #353b49;
+      border-radius: 6px; padding: 6px; font-size: 11px; color: #fff; resize: vertical; min-height: 36px; outline: none;
+    }
+    .box-input:focus { border-color: #00d2ff; }
+    .wms-widget-actions { display: flex; gap: 6px; margin-top: 4px; }
+    .btn-open-canvas {
+      flex: 1; padding: 9px; background: linear-gradient(135deg, #6366f1, #4338ca);
+      color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;
+      transition: transform 0.15s, box-shadow 0.15s; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+    .btn-open-canvas:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(99, 102, 241, 0.45); }
+    .btn-quick-run {
+      padding: 9px 12px; background: linear-gradient(135deg, #059669, #10b981);
+      color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 12px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .btn-quick-run:hover { filter: brightness(1.1); }
+    #wms-status-toast {
+      margin-top: 8px; padding: 6px 8px; border-radius: 6px; font-size: 11px; font-weight: 600;
+      background: #13141a; border: 1px solid #2c303c; color: #94a3b8; text-align: center;
+    }
+
+    #wms-node-editor {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: #0d0e12;
+      z-index: 2147483645;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      user-select: none;
+      color: #e2e8f0;
+    }
+    .node-toolbar {
+      position: absolute; top: 0; left: 0; width: 100%; height: 54px;
+      background: #15171e; border-bottom: 1px solid #272a36;
+      display: flex; align-items: center; padding: 0 14px; gap: 7px;
+      box-sizing: border-box; z-index: 1000; box-shadow: 0 4px 18px rgba(0,0,0,0.4);
+      overflow-x: auto;
+    }
+    .toolbar-label { font-size: 11px; font-weight: 700; color: #717d96; text-transform: uppercase; margin-right: 4px; white-space: nowrap; }
+    .node-btn {
+      background: #252834; color: #f1f5f9; border: 1px solid #3b4052; border-radius: 7px;
+      padding: 6px 10px; font-weight: 600; font-size: 11px; cursor: pointer; display: inline-flex;
+      align-items: center; gap: 5px; transition: all 0.15s ease; white-space: nowrap;
+    }
+    .node-btn:hover { background: #323646; border-color: #4e556d; transform: translateY(-1px); }
+    .btn-run-studio { background: #2563eb; border-color: #3b82f6; }
+    .btn-run-studio:hover { background: #3b82f6; }
+    .btn-save { background: #059669; border-color: #10b981; }
+    .btn-save:hover { background: #10b981; }
+    .btn-close { background: #dc2626; border-color: #ef4444; margin-left: auto; }
+    .btn-close:hover { background: #ef4444; }
+
+    .node-canvas-wrapper {
+      position: absolute; top: 54px; left: 0; right: 0; bottom: 0;
+      overflow: auto; background: #0a0b0e;
+    }
+    .node-canvas {
+      position: relative; width: 4000px; height: 4000px;
+      background-size: 32px 32px;
+      background-image: 
+        radial-gradient(circle, #252a38 1.3px, transparent 1.3px),
+        linear-gradient(to right, rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,0.018) 1px, transparent 1px);
+    }
+    #wire-layer {
+      position: absolute; top: 0; left: 0; width: 4000px; height: 4000px; pointer-events: none; z-index: 2;
+    }
+    .wire { fill: none; stroke: #64748b; stroke-width: 3.5; stroke-linecap: round; transition: stroke 0.15s, stroke-width 0.15s; }
+    .wire:hover { stroke: #ef4444; stroke-width: 6; }
+    .wire-active { stroke: #38bdf8; stroke-dasharray: 8 6; pointer-events: none !important; animation: wireFlow 0.5s linear infinite; }
+    .wire-true { stroke: #10b981; }
+    .wire-false { stroke: #f43f5e; }
+    @keyframes wireFlow { to { stroke-dashoffset: -14; } }
+
+    .wms-node {
+      position: absolute; width: 245px; background: #161820; border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.65), 0 0 0 1px #2b3040;
+      display: flex; flex-direction: column; z-index: 5;
+    }
+    .wms-node.is-executing {
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.85), 0 0 0 2px #38bdf8 !important;
+    }
+    .wms-node-header {
+      padding: 9px 12px; border-radius: 9px 9px 0 0; font-weight: 700; font-size: 11px;
+      cursor: grab; display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.08); text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .wms-node-header:active { cursor: grabbing; }
+    .wms-node-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
+
+    .node-trigger .wms-node-header { background: linear-gradient(90deg, #b45309, #d97706); color: #fff; }
+    .node-listener .wms-node-header { background: linear-gradient(90deg, #7c3aed, #9333ea); color: #fff; }
+    .node-if .wms-node-header { background: linear-gradient(90deg, #be123c, #e11d48); color: #fff; }
+    .node-click .wms-node-header { background: linear-gradient(90deg, #1d4ed8, #2563eb); color: #fff; }
+    .node-type .wms-node-header { background: linear-gradient(90deg, #047857, #059669); color: #fff; }
+    .node-wait .wms-node-header { background: linear-gradient(90deg, #c2410c, #ea580c); color: #fff; }
+    .node-extract .wms-node-header { background: linear-gradient(90deg, #0e7490, #0891b2); color: #fff; }
+
+    .node-input, .node-select {
+      background: #0f1015; color: #f1f5f9; border: 1px solid #2b2f3d;
+      border-radius: 6px; padding: 6px 8px; font-size: 11px; width: 100%; box-sizing: border-box; outline: none;
+    }
+    .node-input:focus, .node-select:focus { border-color: #38bdf8; }
+    .node-btn-small {
+      background: #252834; color: #e2e8f0; border: 1px solid #3b4053;
+      border-radius: 6px; padding: 6px; font-size: 11px; cursor: pointer; text-align: center;
+      font-weight: 600; transition: background 0.15s;
+    }
+    .node-btn-small:hover { background: #323748; color: #fff; border-color: #38bdf8; }
+
+    .port {
+      width: 18px; height: 18px; border-radius: 50%; background: #94a3b8;
+      position: absolute; border: 3px solid #161820; cursor: pointer; z-index: 20;
+      box-sizing: border-box; transition: transform 0.15s, background-color 0.15s, box-shadow 0.15s;
+    }
+    .port:hover, .port.port-selected { transform: scale(1.35); background: #38bdf8; box-shadow: 0 0 12px #38bdf8; }
+    .port-in { left: -10px; top: 50%; margin-top: -9px; }
+    .port-out { right: -10px; top: 50%; margin-top: -9px; }
+    .port-true { right: -10px; top: 48px; background: #10b981; }
+    .port-false { right: -10px; top: 84px; background: #ef4444; }
+    .port-tag { position: absolute; right: 12px; font-size: 9px; font-weight: 800; pointer-events: none; text-transform: uppercase; }
+    .tag-true { top: 50px; color: #10b981; }
+    .tag-false { top: 86px; color: #ef4444; }
+
+    #wms-picker-highlight {
+      position: fixed; pointer-events: none; z-index: 2147483646;
+      border: 3px solid #00d2ff; background: rgba(0, 210, 255, 0.15);
+      border-radius: 4px; display: none; transition: all 0.05s ease;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(style);
+
+  const pickerHighlight = document.createElement('div');
+  pickerHighlight.id = 'wms-picker-highlight';
+  document.body.appendChild(pickerHighlight);
+
+  const mainWidget = document.createElement('div');
+  mainWidget.id = 'wms-helper-utility-node';
+  mainWidget.className = 'fs-exclude';
+  mainWidget.setAttribute('data-rr-ignore', 'true');
+  mainWidget.setAttribute('data-dd-privacy', 'mask-user-input');
+
+  const box1 = { id: 'wms-box-1', label: 'Box 1 (Highlight + Alt+1)', val: '' };
+  const box2 = { id: 'wms-box-2', label: 'Box 2 (Highlight + Alt+2)', val: '' };
+
+  mainWidget.innerHTML = `
+    <div id="wms-drag-handle" class="wms-drag-handle">
+      <span>⚡ WMS Circuit Assistant</span>
+      <span style="font-size:10px; color:#94a3b8;">ESC = Stop</span>
+    </div>
+    <div class="box-wrapper">
+      <div class="box-label">${box1.label}</div>
+      <textarea id="${box1.id}" class="box-input" placeholder="Copied or extracted text..."></textarea>
+    </div>
+    <div class="box-wrapper">
+      <div class="box-label">${box2.label}</div>
+      <textarea id="${box2.id}" class="box-input" placeholder="Copied or extracted text..."></textarea>
+    </div>
+    <div class="wms-widget-actions">
+      <button id="open-node-editor-btn" class="btn-open-canvas">🧩 Circuit Studio</button>
+      <button id="quick-run-circuit-btn" class="btn-quick-run" title="Run circuit immediately">▶ Run</button>
+    </div>
+    <div id="wms-status-toast">Ready • Build or press ▶ Run</div>
+  `;
+  document.body.appendChild(mainWidget);
+
+  const editorOverlay = document.createElement('div');
+  editorOverlay.id = 'wms-node-editor';
+  editorOverlay.className = 'fs-exclude';
+  editorOverlay.setAttribute('data-rr-ignore', 'true');
+
+  editorOverlay.innerHTML = `
+    <div class="node-toolbar">
+      <span class="toolbar-label">Add Block:</span>
+      <button class="node-btn" id="add-trigger">⚡ Trigger</button>
+      <button class="node-btn" id="add-listener">👂 Listener</button>
+      <button class="node-btn" id="add-if">🔀 If / Else</button>
+      <button class="node-btn" id="add-click">👆 Click</button>
+      <button class="node-btn" id="add-type">⌨️ Type</button>
+      <button class="node-btn" id="add-wait">⏳ Wait</button>
+      <button class="node-btn" id="add-extract">📋 Extract</button>
+      <button class="node-btn btn-run-studio" id="studio-run-btn">▶ Test Run</button>
+      <button class="node-btn btn-save" id="save-graph-btn">💾 Save</button>
+      <button class="node-btn btn-close" id="close-editor-btn">✖ Close</button>
+    </div>
+    <div class="node-canvas-wrapper" id="canvas-wrapper">
+      <div class="node-canvas" id="node-canvas">
+        <svg id="wire-layer" width="4000" height="4000"></svg>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(editorOverlay);
+
+  let graph = { nodes: [], edges: [] };
+  let cancelMacro = false;
+  let isMacroRunning = false;
+  let isPickingElement = false;
+  let selectedPort = null;
+  let activeWire = null;
+  let processedEvents = new WeakMap();
+
+  const canvas = document.getElementById('node-canvas');
+  const canvasWrapper = document.getElementById('canvas-wrapper');
+  const wireLayer = document.getElementById('wire-layer');
+  const b1El = document.getElementById(box1.id);
+  const b2El = document.getElementById(box2.id);
+  const toastEl = document.getElementById('wms-status-toast');
+
+  function setStatus(msg, color = '#94a3b8') {
+    if (toastEl) {
+      toastEl.textContent = msg;
+      toastEl.style.color = color;
+    }
+  }
+
+  function generateId() {
+    return 'node_' + Math.random().toString(36).substring(2, 9);
+  }
+
+  function saveGraph() {
+    SafeStorage.set({ wmsGraph: graph });
+  }
+
+  SafeStorage.get(['box1Data', 'box2Data', 'wmsGraph'], (res) => {
+    if (res.box1Data) { b1El.value = res.box1Data; box1.val = res.box1Data; }
+    if (res.box2Data) { b2El.value = res.box2Data; box2.val = res.box2Data; }
+    if (res.wmsGraph && Array.isArray(res.wmsGraph.nodes) && res.wmsGraph.nodes.length > 0) {
+      graph = res.wmsGraph;
+    } else {
+      // Create a helpful default starter node if empty
+      const trigId = generateId();
+      graph = {
+        nodes: [{ id: trigId, type: 'trigger', subtype: 'hotkey', val: 'ALT+Q', x: 80, y: 100 }],
+        edges: []
+      };
+    }
+    renderGraph();
+    checkPassiveURLTriggers();
+  });
+
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local') {
+        if (changes.box1Data && changes.box1Data.newValue !== box1.val) {
+          box1.val = changes.box1Data.newValue || '';
+          b1El.value = box1.val;
+        }
+        if (changes.box2Data && changes.box2Data.newValue !== box2.val) {
+          box2.val = changes.box2Data.newValue || '';
+          b2El.value = box2.val;
+        }
+        if (changes.wmsGraph && editorOverlay.style.display !== 'block' && !isPickingElement) {
+          graph = changes.wmsGraph.newValue || { nodes: [], edges: [] };
+          renderGraph();
+        }
       }
     });
+  }
 
-    // Flexible Timeout: Abort safely if elements never render
-    timeoutTimer = setTimeout(() => {
-        console.warn('🛑 Wait for element timed out:', selector);
-        if (timeoutMs >= 10000) cancelMacro = true; // Only hard-abort macro on explicitly long wait blocks
-        observer.disconnect();
-        resolve(false);
-    }, timeoutMs);
+  b1El.addEventListener('input', e => { box1.val = e.target.value; SafeStorage.set({ box1Data: box1.val }); });
+  b2El.addEventListener('input', e => { box2.val = e.target.value; SafeStorage.set({ box2Data: box2.val }); });
 
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+  document.getElementById('open-node-editor-btn').addEventListener('click', () => {
+    editorOverlay.style.display = 'block';
+    requestAnimationFrame(() => drawAllWires());
   });
-}
 
-// 7. Event Listeners (Human Override & Hotkeys)
+  document.getElementById('close-editor-btn').addEventListener('click', () => {
+    editorOverlay.style.display = 'none';
+    selectedPort = null;
+  });
 
-// THE HUMAN TOUCH OVERRIDE: Automatically abort if the user clicks the mouse manually
-document.addEventListener('mousedown', (e) => {
-  if (isMacroRunning && e.isTrusted) {
-      console.log('🛑 Human Intervention Detected! Auto-aborting macro.');
-      cancelMacro = true;
-      document.body.style.border = 'none'; 
-      }
-  
+  document.getElementById('save-graph-btn').addEventListener('click', () => {
+    saveGraph();
+    const btn = document.getElementById('save-graph-btn');
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '✅ Saved!';
+    setStatus('Circuit saved!', '#10b981');
+    setTimeout(() => { btn.innerHTML = oldText; }, 1200);
+  });
+
+  function runFirstAvailableCircuit() {
+    if (graph.nodes.length === 0) {
+      setStatus('⚠️ Add blocks in Circuit Studio first!', '#f59e0b');
+      return;
+    }
+    // Find a trigger/listener node, or fallback to any root node without incoming wires
+    let startNode = graph.nodes.find(n => n.type === 'trigger' || n.type === 'listener');
+    if (!startNode) {
+      startNode = graph.nodes.find(n => !graph.edges.some(e => e.target === n.id)) || graph.nodes[0];
+    }
+    if (startNode) {
+      editorOverlay.style.display = 'none';
+      executeGraph(startNode.id);
+    }
+  }
+
+  document.getElementById('quick-run-circuit-btn').addEventListener('click', runFirstAvailableCircuit);
+  document.getElementById('studio-run-btn').addEventListener('click', runFirstAvailableCircuit);
+
+  function renderGraph() {
+    Array.from(canvas.children).forEach(child => {
+      if (child.id !== 'wire-layer') child.remove();
+    });
+    wireLayer.innerHTML = '';
+    graph.nodes.forEach(node => createNodeDOM(node));
+    requestAnimationFrame(() => drawAllWires());
+  }
+
+  function createNodeDOM(node) {
+    const el = document.createElement('div');
+    el.className = `wms-node node-${node.type}`;
+    el.id = node.id;
+    el.style.left = (node.x || 100) + 'px';
+    el.style.top = (node.y || 100) + 'px';
+
+    const icons = {
+      trigger: '⚡', listener: '👂', if: '🔀',
+      click: '👆', type: '⌨️', wait: '⏳', extract: '📋'
+    };
+    const headerIcon = icons[node.type] || '⚡';
+    const title = node.type.toUpperCase();
+
+    const headerHtml = `
+      <div class="wms-node-header">
+        <span>${headerIcon} ${title}</span>
+        <span class="del-node" style="cursor:pointer; opacity:0.8; padding:0 4px;" title="Delete Node">✖</span>
+      </div>
+    `;
+
+    let bodyHtml = `<div class="wms-node-body">`;
+
+    if (node.type === 'trigger') {
+      bodyHtml += `
+        <select class="node-select n-trig-type">
+          <option value="hotkey" ${node.subtype === 'hotkey' ? 'selected' : ''}>Keyboard Shortcut</option>
+          <option value="url" ${node.subtype === 'url' ? 'selected' : ''}>Auto URL Match</option>
+        </select>
+        <input type="text" class="node-input n-trig-val" value="${node.val || ''}" placeholder="${node.subtype === 'url' ? 'e.g. /inbound' : 'Click & press keys (e.g. Alt+Q)'}">
+        <div class="node-btn-small n-run-this" style="background:#065f46; border-color:#10b981; color:#fff;">▶ Run This Trigger</div>
+      `;
+    } else if (node.type === 'listener') {
+      bodyHtml += `
+        <div class="node-btn-small n-pick">🎯 Pick Target to Watch</div>
+        <input type="text" class="node-input n-selector" value="${node.selector || ''}" placeholder="Click Pick or paste selector...">
+        <select class="node-select n-listen-mode">
+          <option value="text_contains" ${node.mode === 'text_contains' ? 'selected' : ''}>Text Contains</option>
+          <option value="number_greater" ${node.mode === 'number_greater' ? 'selected' : ''}>Number > Value</option>
+          <option value="number_less" ${node.mode === 'number_less' ? 'selected' : ''}>Number < Value</option>
+          <option value="barcode_scan" ${node.mode === 'barcode_scan' ? 'selected' : ''}>Barcode / Input Length >=</option>
+        </select>
+        <input type="text" class="node-input n-listen-val" value="${node.val || ''}" placeholder="Target text or number...">
+      `;
+    } else if (node.type === 'if') {
+      bodyHtml += `
+        <div class="node-btn-small n-pick">🎯 Pick Element to Check</div>
+        <input type="text" class="node-input n-selector" value="${node.selector || ''}" placeholder="Click Pick or paste selector...">
+        <select class="node-select n-if-cond">
+          <option value="exists" ${node.cond === 'exists' ? 'selected' : ''}>Element Exists & Visible</option>
+          <option value="text_equals" ${node.cond === 'text_equals' ? 'selected' : ''}>Text Equals</option>
+          <option value="text_contains" ${node.cond === 'text_contains' ? 'selected' : ''}>Text Contains</option>
+          <option value="number_gt" ${node.cond === 'number_gt' ? 'selected' : ''}>Number Greater Than (>)</op
