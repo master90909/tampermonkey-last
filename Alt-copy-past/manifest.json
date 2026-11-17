@@ -1,14 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Floating Quick-Copy Textboxes",
-  "version": "1.0",
-  "description": "Two floating textboxes bound to Alt+1 and Alt+2 for quick copy and paste.",
-  "permissions": ["storage"],
+  "name": "WMS Circuit Studio",
+  "version": "2.3.0",
+  "description": "WMS Helper & Visual Circuit Studio with Existing Browser Tab Switching (Ctrl+1..9) and Multi-Canvas Copy/Paste",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "css": ["style.css"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ]
 }
